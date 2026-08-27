@@ -1,0 +1,148 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { TLEditorSnapshot } from "tldraw";
+import { supabase } from "@/lib/supabaseClient";
+import CanvasThumbnail from "./CanvasThumbnail";
+
+type CanvasRow = {
+  student_id: string;
+  student_name: string | null;
+  snapshot: Partial<TLEditorSnapshot> | null;
+  updated_at: string;
+};
+
+export default function TeacherGrid({ sessionId }: { sessionId: string }) {
+  const [canvases, setCanvases] = useState<Record<string, CanvasRow>>({});
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(
+    null
+  );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("canvases")
+        .select("student_id, student_name, snapshot, updated_at")
+        .eq("session_id", sessionId);
+
+      if (error) {
+        console.error("Failed to load canvases:", error.message);
+        return;
+      }
+      if (isCancelled || !data) return;
+
+      const asMap: Record<string, CanvasRow> = {};
+      for (const row of data) asMap[row.student_id] = row as CanvasRow;
+      setCanvases(asMap);
+    })();
+
+    const channel = supabase
+      .channel(`canvases-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "canvases",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          const row = payload.new as CanvasRow | undefined;
+          if (!row?.student_id) return;
+          setCanvases((prev) => ({ ...prev, [row.student_id]: row }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isCancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId]);
+
+  const students = Object.values(canvases).sort((a, b) =>
+    (a.student_name ?? a.student_id).localeCompare(
+      b.student_name ?? b.student_id
+    )
+  );
+
+  const expanded = expandedStudentId ? canvases[expandedStudentId] : null;
+
+  return (
+    <div className="min-h-screen bg-neutral-950 p-4 text-neutral-100">
+      <h1 className="mb-4 text-lg font-medium">Live session — {sessionId}</h1>
+
+      {students.length === 0 && (
+        <p className="text-neutral-400">
+          Waiting for students to join and start drawing…
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        {students.map((row) => (
+          <div
+            key={row.student_id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setExpandedStudentId(row.student_id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setExpandedStudentId(row.student_id);
+              }
+            }}
+            className="cursor-pointer overflow-hidden rounded-lg border border-neutral-800 bg-white text-left transition hover:border-neutral-500"
+          >
+            <div className="aspect-video w-full">
+              {row.snapshot ? (
+                <CanvasThumbnail key={row.updated_at} snapshot={row.snapshot} />
+              ) : (
+                <div className="flex h-full items-center justify-center text-neutral-400">
+                  No drawing yet
+                </div>
+              )}
+            </div>
+            <div className="border-t border-neutral-800 bg-neutral-900 px-2 py-1 text-sm text-neutral-100">
+              {row.student_name ?? row.student_id}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {expanded && (
+        <div
+          className="fixed inset-0 z-20 flex items-center justify-center bg-black/80 p-6"
+          onClick={() => setExpandedStudentId(null)}
+        >
+          <div
+            className="h-full max-h-[85vh] w-full max-w-5xl overflow-hidden rounded-lg bg-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-4 py-2">
+              <span className="font-medium text-neutral-900">
+                {expanded.student_name ?? expanded.student_id}
+              </span>
+              <button
+                onClick={() => setExpandedStudentId(null)}
+                className="text-neutral-500 hover:text-neutral-900"
+              >
+                Close
+              </button>
+            </div>
+            <div className="h-[calc(100%-41px)] w-full">
+              {Boolean(expanded.snapshot) && (
+                <CanvasThumbnail
+                  key={expanded.updated_at}
+                  snapshot={expanded.snapshot}
+                  interactive
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
