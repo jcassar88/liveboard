@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (payload[CLAIM_DEPLOYMENT_ID] !== ltiConfig.canvasDeploymentId) {
+    if (!ltiConfig.canvasDeploymentIds.includes(payload[CLAIM_DEPLOYMENT_ID] as string)) {
     return NextResponse.json(
       { error: "Unexpected deployment_id" },
       { status: 400 }

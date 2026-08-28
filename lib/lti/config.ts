@@ -20,8 +20,10 @@ export const ltiConfig = {
   get canvasClientId() {
     return requireEnv("CANVAS_CLIENT_ID");
   },
-  get canvasDeploymentId() {
-    return requireEnv("CANVAS_DEPLOYMENT_ID");
+    get canvasDeploymentIds() {
+    return requireEnv("CANVAS_DEPLOYMENT_ID")
+      .split(",")
+      .map((id) => id.trim());
   },
   get canvasAuthLoginUrl() {
     return requireEnv("CANVAS_AUTH_LOGIN_URL");
