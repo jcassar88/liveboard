@@ -56,10 +56,13 @@ export async function POST(request: NextRequest) {
       audience: ltiConfig.canvasClientId,
     });
     payload = result.payload;
-  } catch (err) {
+    } catch (err) {
     console.error("LTI launch token verification failed:", err);
     return NextResponse.json(
-      { error: "Invalid launch token" },
+      {
+        error: "Invalid launch token",
+        detail: err instanceof Error ? err.message : String(err),
+      },
       { status: 400 }
     );
   }
