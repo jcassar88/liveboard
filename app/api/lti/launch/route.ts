@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify, createRemoteJWKSet } from "jose";
+import { jwtVerify, createRemoteJWKSet, decodeJwt } from "jose";
 import { ltiConfig } from "@/lib/lti/config";
 
 const CLAIM_MESSAGE_TYPE =
@@ -56,12 +56,22 @@ export async function POST(request: NextRequest) {
       audience: ltiConfig.canvasClientId,
     });
     payload = result.payload;
-    } catch (err) {
+      } catch (err) {
     console.error("LTI launch token verification failed:", err);
+    let debugClaims: unknown = null;
+    try {
+      debugClaims = decodeJwt(idToken);
+    } catch {
+      // ignore — token itself is malformed, not just a claims mismatch
+    }
     return NextResponse.json(
       {
         error: "Invalid launch token",
         detail: err instanceof Error ? err.message : String(err),
+        expectedAudience: ltiConfig.canvasClientId,
+        expectedIssuer: ltiConfig.canvasIssuer,
+        tokenAud: (debugClaims as { aud?: unknown })?.aud,
+        tokenIss: (debugClaims as { iss?: unknown })?.iss,
       },
       { status: 400 }
     );
