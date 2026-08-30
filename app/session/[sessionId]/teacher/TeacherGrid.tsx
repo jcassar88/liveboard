@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { TLEditorSnapshot } from "tldraw";
 import { supabase } from "@/lib/supabaseClient";
 import CanvasThumbnail from "./CanvasThumbnail";
+import { useRouter } from "next/navigation";
 
 type CanvasRow = {
   student_id: string;
@@ -12,11 +13,58 @@ type CanvasRow = {
   updated_at: string;
 };
 
+type PastSession = { sessionId: string; date: string };
+
+// session_id is built as `${courseId}-${YYYY-MM-DD}` — split that back apart
+// so we can look up every date this course has a session for.
+function parseSessionId(id: string): { courseId: string; date: string } | null {
+  const match = id.match(/^(.*)-(\d{4}-\d{2}-\d{2})$/);
+  if (!match) return null;
+  return { courseId: match[1], date: match[2] };
+}
+
 export default function TeacherGrid({ sessionId }: { sessionId: string }) {
+  const router = useRouter();
   const [canvases, setCanvases] = useState<Record<string, CanvasRow>>({});
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(
     null
   );
+  const [pastSessions, setPastSessions] = useState<PastSession[]>([]);
+
+  const parsed = parseSessionId(sessionId);
+
+  useEffect(() => {
+    if (!parsed) return;
+    let isCancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("canvases")
+        .select("session_id")
+        .like("session_id", `${parsed.courseId}-%`);
+
+      if (error) {
+        console.error("Failed to load past sessions:", error.message);
+        return;
+      }
+      if (isCancelled || !data) return;
+
+      const unique = Array.from(new Set(data.map((row) => row.session_id)));
+      const sessions = unique
+        .map((id) => {
+          const p = parseSessionId(id);
+          return p ? { sessionId: id, date: p.date } : null;
+        })
+        .filter((s): s is PastSession => s !== null)
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      setPastSessions(sessions);
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [parsed?.courseId]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -72,8 +120,22 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="min-h-screen bg-neutral-950 p-4 text-neutral-100">
-      <h1 className="mb-4 text-lg font-medium">Live session — {sessionId}</h1>
-
+      <div className="mb-4 flex items-center gap-3">
+        <h1 className="text-lg font-medium">Live session — {sessionId}</h1>
+        {pastSessions.length > 1 && (
+          <select
+            value={sessionId}
+            onChange={(e) => router.push(`/session/${e.target.value}/teacher`)}
+            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100"
+          >
+            {pastSessions.map((s) => (
+              <option key={s.sessionId} value={s.sessionId}>
+                {s.date === parsed?.date ? `${s.date} (current)` : s.date}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
       {students.length === 0 && (
         <p className="text-neutral-400">
           Waiting for students to join and start drawing…
