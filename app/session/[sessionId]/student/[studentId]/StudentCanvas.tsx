@@ -18,9 +18,8 @@ export default function StudentCanvas({
   const [isLoading, setIsLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [acceptingResponses, setAcceptingResponses] = useState(true);
-  const [teacherAnnotation, setTeacherAnnotation] = useState
-    Partial<TLEditorSnapshot> | null
-  >(null);
+  const [teacherAnnotation, setTeacherAnnotation] =
+    useState<Partial<TLEditorSnapshot> | null>(null);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const annotationEditorRef = useRef<Editor | null>(null);
