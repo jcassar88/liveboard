@@ -205,9 +205,14 @@ export default function StudentCanvas({
         shapeUtils={customShapeUtils}
         tools={customTools}
       />
-      {/* Live, read-only overlay of whatever the teacher has annotated on
+            {/* Live, read-only overlay of whatever the teacher has annotated on
           this student's board — purely visual, never intercepts the
           student's own drawing. */}
+      {teacherAnnotation && (
+        <div className="pointer-events-none absolute top-3 right-3 z-40 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white shadow">
+          Teacher notes
+        </div>
+      )}
       <div className="pointer-events-none absolute inset-0 z-40">
         <Tldraw
           hideUi

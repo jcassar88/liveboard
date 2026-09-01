@@ -113,5 +113,20 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.redirect(destination.toString(), 303);
   response.cookies.delete("lti_state");
   response.cookies.delete("lti_nonce");
+
+  if (isInstructor(payload[CLAIM_ROLES])) {
+    // Marks this browser as having verified Instructor access for this
+    // course, via a real Canvas launch — checked server-side before the
+    // teacher grid renders. Not tied to a specific date's session, since
+    // history browsing needs to work too, just to the course itself.
+    response.cookies.set(`teacher_of_${contextId}`, "1", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 8 * 60 * 60, // a school day
+      path: "/",
+    });
+  }
+
   return response;
 }
