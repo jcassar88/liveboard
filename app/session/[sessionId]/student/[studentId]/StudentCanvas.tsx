@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, Editor, TLEditorSnapshot, react } from "tldraw";
+import { Tldraw, Editor, TLEditorSnapshot, TLShapeId, react } from "tldraw";
 import "tldraw/tldraw.css";
 import { supabase } from "@/lib/supabaseClient";
 import { customShapeUtils, customTools } from "@/lib/math-shape";
@@ -119,7 +119,7 @@ export default function StudentCanvas({
         const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
         return { id: shape.id, x: screenPoint.x, y: screenPoint.y - 22 };
       })
-      .filter((p): p is { id: string; x: number; y: number } => p !== null);
+           .filter((p): p is { id: TLShapeId; x: number; y: number } => p !== null);
     setBadgePositions(positions);
   }, []);
 
@@ -161,9 +161,8 @@ export default function StudentCanvas({
     };
   }, []);
 
-  const [badgePositions, setBadgePositions] = useState
-    { id: string; x: number; y: number }[]
-  >([]);
+  const [badgePositions, setBadgePositions] =
+    useState<{ id: string; x: number; y: number }[]>([]);
   const saveSnapshot = useCallback(
     async (editor: Editor) => {
       const snapshot = editor.getSnapshot();
