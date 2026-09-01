@@ -122,29 +122,47 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
 
   const [prompt, setPrompt] = useState("");
   const [promptInput, setPromptInput] = useState("");
+  const [acceptingResponses, setAcceptingResponses] = useState(true);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase
         .from("session_prompts")
-        .select("prompt")
+        .select("prompt, accepting_responses")
         .eq("session_id", sessionId)
         .maybeSingle();
       const current = data?.prompt ?? "";
       setPrompt(current);
       setPromptInput(current);
+      setAcceptingResponses(data?.accepting_responses ?? true);
     })();
   }, [sessionId]);
 
   const postPrompt = async () => {
     const { error } = await supabase
       .from("session_prompts")
-      .upsert({ session_id: sessionId, prompt: promptInput });
+      .upsert({
+        session_id: sessionId,
+        prompt: promptInput,
+        accepting_responses: acceptingResponses,
+      });
     if (error) {
       console.error("Failed to post prompt:", error.message);
       return;
     }
     setPrompt(promptInput);
+  };
+
+  const toggleAccepting = async () => {
+    const next = !acceptingResponses;
+    const { error } = await supabase
+      .from("session_prompts")
+      .upsert({ session_id: sessionId, prompt, accepting_responses: next });
+    if (error) {
+      console.error("Failed to toggle accepting_responses:", error.message);
+      return;
+    }
+    setAcceptingResponses(next);
   };
   return (
     <div className="min-h-screen bg-neutral-950 p-4 text-neutral-100">
@@ -176,6 +194,16 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
           className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
           Post to students
+        </button>
+        <button
+          onClick={toggleAccepting}
+          className={`rounded px-4 py-2 text-sm font-medium text-white ${
+            acceptingResponses
+              ? "bg-red-600 hover:bg-red-700"
+              : "bg-green-600 hover:bg-green-700"
+          }`}
+        >
+          {acceptingResponses ? "Pause responses" : "Resume responses"}
         </button>
       </div>
       {prompt && (

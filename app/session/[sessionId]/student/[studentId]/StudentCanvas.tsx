@@ -16,6 +16,7 @@ export default function StudentCanvas({
 }) {
   const [isLoading, setIsLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
+  const [acceptingResponses, setAcceptingResponses] = useState(true);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<Editor | null>(null);
 
@@ -23,12 +24,15 @@ export default function StudentCanvas({
     let isCancelled = false;
 
     (async () => {
-      const { data } = await supabase
+            const { data } = await supabase
         .from("session_prompts")
-        .select("prompt")
+        .select("prompt, accepting_responses")
         .eq("session_id", sessionId)
         .maybeSingle();
-      if (!isCancelled) setPrompt(data?.prompt ?? "");
+      if (!isCancelled) {
+        setPrompt(data?.prompt ?? "");
+        setAcceptingResponses(data?.accepting_responses ?? true);
+      }
     })();
 
     const channel = supabase
@@ -41,9 +45,12 @@ export default function StudentCanvas({
           table: "session_prompts",
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload) => {
-          const row = payload.new as { prompt?: string } | undefined;
+                (payload) => {
+          const row = payload.new as
+            | { prompt?: string; accepting_responses?: boolean }
+            | undefined;
           setPrompt(row?.prompt ?? "");
+          setAcceptingResponses(row?.accepting_responses ?? true);
         }
       )
       .subscribe();
@@ -120,9 +127,16 @@ export default function StudentCanvas({
           Loading your canvas…
         </div>
       )}
-      {prompt && (
+            {prompt && (
         <div className="absolute top-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
           {prompt}
+        </div>
+      )}
+      {!acceptingResponses && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+          <p className="max-w-sm rounded-lg bg-neutral-900 px-6 py-4 text-center text-white shadow-lg">
+            Your teacher has paused responses right now.
+          </p>
         </div>
       )}
          <button
