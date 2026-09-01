@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, Editor, TLEditorSnapshot } from "tldraw";
+import { Tldraw, Editor, TLEditorSnapshot, react } from "tldraw";
 import "tldraw/tldraw.css";
 import { supabase } from "@/lib/supabaseClient";
 import { customShapeUtils, customTools } from "@/lib/math-shape";
@@ -116,6 +116,33 @@ export default function StudentCanvas({
     }
   }, [teacherAnnotation]);
 
+  // Keep the read-only annotation overlay's camera locked to the
+  // student's own canvas, so the teacher's marks stay pinned to the
+  // right spot as the student pans/zooms their own drawing.
+  useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
+
+    const trySetup = () => {
+      if (cancelled) return;
+      const main = editorRef.current;
+      const overlay = annotationEditorRef.current;
+      if (main && overlay) {
+        unsub = react("sync-annotation-camera", () => {
+          overlay.setCamera(main.getCamera(), { animation: { duration: 0 } });
+        });
+      } else {
+        requestAnimationFrame(trySetup);
+      }
+    };
+    trySetup();
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, []);
+
   const saveSnapshot = useCallback(
     async (editor: Editor) => {
       const snapshot = editor.getSnapshot();
@@ -205,14 +232,14 @@ export default function StudentCanvas({
         shapeUtils={customShapeUtils}
         tools={customTools}
       />
-            {/* Live, read-only overlay of whatever the teacher has annotated on
-          this student's board — purely visual, never intercepts the
-          student's own drawing. */}
       {teacherAnnotation && (
         <div className="pointer-events-none absolute top-3 right-3 z-40 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white shadow">
           Teacher notes
         </div>
       )}
+      {/* Live, read-only overlay of whatever the teacher has annotated on
+          this student's board — purely visual, never intercepts the
+          student's own drawing. */}
       <div className="pointer-events-none absolute inset-0 z-40">
         <Tldraw
           hideUi
