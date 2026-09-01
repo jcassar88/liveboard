@@ -120,6 +120,32 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
 
   const expanded = expandedStudentId ? canvases[expandedStudentId] : null;
 
+  const [prompt, setPrompt] = useState("");
+  const [promptInput, setPromptInput] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("session_prompts")
+        .select("prompt")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      const current = data?.prompt ?? "";
+      setPrompt(current);
+      setPromptInput(current);
+    })();
+  }, [sessionId]);
+
+  const postPrompt = async () => {
+    const { error } = await supabase
+      .from("session_prompts")
+      .upsert({ session_id: sessionId, prompt: promptInput });
+    if (error) {
+      console.error("Failed to post prompt:", error.message);
+      return;
+    }
+    setPrompt(promptInput);
+  };
   return (
     <div className="min-h-screen bg-neutral-950 p-4 text-neutral-100">
       <div className="mb-4 flex items-center gap-3">
@@ -138,8 +164,27 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
           </select>
         )}
       </div>
-      {students.length === 0 && (
-        <p className="text-neutral-400">
+      <div className="mb-4 flex gap-2">
+        <input
+          value={promptInput}
+          onChange={(e) => setPromptInput(e.target.value)}
+          placeholder="Type a question or statement for students to see…"
+          className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+        />
+        <button
+          onClick={postPrompt}
+          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Post to students
+        </button>
+      </div>
+      {prompt && (
+        <p className="mb-4 text-sm text-neutral-400">
+          Currently showing: <span className="text-neutral-200">{prompt}</span>
+        </p>
+      )}
+
+      {students.length === 0 && (        <p className="text-neutral-400">
           Waiting for students to join and start drawing…
         </p>
       )}

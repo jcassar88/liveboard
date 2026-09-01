@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Tldraw, Editor } from "tldraw";
+import { useCallback, useEffect, useRef, useState } from "react";import { Tldraw, Editor } from "tldraw";
 import "tldraw/tldraw.css";
 import { supabase } from "@/lib/supabaseClient";
 import { customShapeUtils, customTools } from "@/lib/math-shape";
@@ -16,8 +15,44 @@ export default function StudentCanvas({
   studentId: string;
 }) {
   const [isLoading, setIsLoading] = useState(true);
+  const [prompt, setPrompt] = useState("");
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<Editor | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    (async () => {
+      const { data } = await supabase
+        .from("session_prompts")
+        .select("prompt")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      if (!isCancelled) setPrompt(data?.prompt ?? "");
+    })();
+
+    const channel = supabase
+      .channel(`prompt-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_prompts",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          const row = payload.new as { prompt?: string } | undefined;
+          setPrompt(row?.prompt ?? "");
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isCancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId]);
 
   const saveSnapshot = useCallback(
     async (editor: Editor) => {
@@ -80,9 +115,14 @@ export default function StudentCanvas({
 
   return (
     <div className="fixed inset-0">
-      {isLoading && (
+            {isLoading && (
         <div className="absolute top-3 left-3 z-10 rounded bg-black/70 px-3 py-1 text-sm text-white">
           Loading your canvas…
+        </div>
+      )}
+      {prompt && (
+        <div className="absolute top-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
+          {prompt}
         </div>
       )}
          <button
