@@ -110,22 +110,26 @@ export default function StudentCanvas({
     };
   }, [sessionId, studentId]);
 
-    useEffect(() => {
+     const recomputeBadgePositions = useCallback((overlay: Editor) => {
+    const positions = overlay
+      .getCurrentPageShapes()
+      .map((shape) => {
+        const bounds = overlay.getShapePageBounds(shape);
+        if (!bounds) return null;
+        const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
+        return { id: shape.id, x: screenPoint.x, y: screenPoint.y - 22 };
+      })
+      .filter((p): p is { id: string; x: number; y: number } => p !== null);
+    setBadgePositions(positions);
+  }, []);
+
+  useEffect(() => {
     const overlay = annotationEditorRef.current;
     if (overlay && teacherAnnotation) {
       overlay.loadSnapshot(teacherAnnotation);
-      // Recompute the badge position right after loading, rather than
-      // relying only on the reactive camera-sync effect to notice —
-      // that one wasn't reliably re-firing on the very first load.
-      requestAnimationFrame(() => {
-        const bounds = overlay.getCurrentPageBounds();
-        if (bounds) {
-          const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
-          setBadgePosition({ x: screenPoint.x, y: screenPoint.y - 28 });
-        }
-      });
+      requestAnimationFrame(() => recomputeBadgePositions(overlay));
     }
-  }, [teacherAnnotation]);
+  }, [teacherAnnotation, recomputeBadgePositions]);
 
     // Keep the read-only annotation overlay's camera locked to the
   // student's own canvas (so the teacher's marks stay pinned to the
@@ -141,16 +145,9 @@ export default function StudentCanvas({
       const main = editorRef.current;
       const overlay = annotationEditorRef.current;
       if (main && overlay) {
-        unsub = react("sync-annotation-camera", () => {
+                unsub = react("sync-annotation-camera", () => {
           overlay.setCamera(main.getCamera(), { animation: { duration: 0 } });
-
-          const bounds = overlay.getCurrentPageBounds();
-          if (bounds) {
-            const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
-            setBadgePosition({ x: screenPoint.x, y: screenPoint.y - 28 });
-          } else {
-            setBadgePosition(null);
-          }
+          recomputeBadgePositions(overlay);
         });
       } else {
         requestAnimationFrame(trySetup);
@@ -164,8 +161,9 @@ export default function StudentCanvas({
     };
   }, []);
 
-   const [badgePosition, setBadgePosition] = useState<{ x: number; y: number } | null>(null);
-
+  const [badgePositions, setBadgePositions] = useState
+    { id: string; x: number; y: number }[]
+  >([]);
   const saveSnapshot = useCallback(
     async (editor: Editor) => {
       const snapshot = editor.getSnapshot();
@@ -255,14 +253,15 @@ export default function StudentCanvas({
         shapeUtils={customShapeUtils}
         tools={customTools}
       />
-                 {teacherAnnotation && badgePosition && (
+          {badgePositions.map((pos) => (
         <div
+          key={pos.id}
           className="pointer-events-none absolute z-40 rounded bg-purple-600 px-2 py-0.5 text-xs font-medium text-white shadow"
-          style={{ left: badgePosition.x, top: badgePosition.y }}
+          style={{ left: pos.x, top: pos.y }}
         >
           Teacher Comment
         </div>
-      )}
+      ))}
       {/* Live, read-only overlay of whatever the teacher has annotated on
           this student's board — purely visual, never intercepts the
           student's own drawing. */}
