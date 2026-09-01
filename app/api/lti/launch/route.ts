@@ -21,8 +21,14 @@ function buildSessionId(contextId: string): string {
 
 function isInstructor(roles: unknown): boolean {
   if (!Array.isArray(roles)) return false;
+  // Canvas sends "Instructor" for a course-enrolled teacher, but an
+  // account admin without a specific enrollment (e.g. launching to test
+  // as an Instructional Leader) can come through as "Administrator"
+  // instead — both should see the teacher view.
   return roles.some(
-    (role) => typeof role === "string" && role.includes("Instructor")
+    (role) =>
+      typeof role === "string" &&
+      (role.includes("Instructor") || role.includes("Administrator"))
   );
 }
 
