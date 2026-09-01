@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { TLEditorSnapshot } from "tldraw";
+import type { ExcalidrawScene } from "@/lib/excalidraw-scene";
 import { supabase } from "@/lib/supabaseClient";
 import CanvasThumbnail from "./CanvasThumbnail";
 import { useRouter } from "next/navigation";
@@ -10,7 +10,7 @@ import AnnotationCanvas from "./AnnotationCanvas";
 type CanvasRow = {
   student_id: string;
   student_name: string | null;
-  snapshot: Partial<TLEditorSnapshot> | null;
+  snapshot: ExcalidrawScene | null;
   updated_at: string;
 };
 

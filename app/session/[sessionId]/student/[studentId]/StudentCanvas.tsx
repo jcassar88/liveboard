@@ -1,10 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Tldraw, Editor, TLEditorSnapshot, TLShapeId, react } from "tldraw";
-import "tldraw/tldraw.css";
+import dynamic from "next/dynamic";
+import "@excalidraw/excalidraw/index.css";
+import type {
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState,
+} from "@excalidraw/excalidraw/types";
 import { supabase } from "@/lib/supabaseClient";
-import { customShapeUtils, customTools } from "@/lib/math-shape";
+import type { ExcalidrawScene } from "@/lib/excalidraw-scene";
+
+const Excalidraw = dynamic(
+  async () => (await import("@excalidraw/excalidraw")).Excalidraw,
+  { ssr: false }
+);
+const excalidrawUtilsPromise = import("@excalidraw/excalidraw");
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -15,16 +25,18 @@ export default function StudentCanvas({
   sessionId: string;
   studentId: string;
 }) {
-  const [isLoading, setIsLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [acceptingResponses, setAcceptingResponses] = useState(true);
   const [teacherAnnotation, setTeacherAnnotation] =
-    useState<Partial<TLEditorSnapshot> | null>(null);
-  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editorRef = useRef<Editor | null>(null);
-  const annotationEditorRef = useRef<Editor | null>(null);
+    useState<ExcalidrawScene | null>(null);
+  const [badgePositions, setBadgePositions] = useState
+    { id: string; x: number; y: number }[]
+  >([]);
 
-  // Prompt banner + accepting-responses toggle, live from the teacher.
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mainApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const overlayApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+
   useEffect(() => {
     let isCancelled = false;
 
@@ -66,9 +78,6 @@ export default function StudentCanvas({
     };
   }, [sessionId]);
 
-  // Teacher's live annotation overlay. The canvases table doesn't support
-  // a compound (session_id AND student_id) realtime filter, so this
-  // subscribes to the whole session and ignores updates for other students.
   useEffect(() => {
     let isCancelled = false;
 
@@ -96,7 +105,7 @@ export default function StudentCanvas({
         },
         (payload) => {
           const row = payload.new as
-            | { student_id?: string; teacher_annotation?: Partial<TLEditorSnapshot> | null }
+            | { student_id?: string; teacher_annotation?: ExcalidrawScene | null }
             | undefined;
           if (row?.student_id !== studentId) return;
           setTeacherAnnotation(row.teacher_annotation ?? null);
@@ -110,125 +119,85 @@ export default function StudentCanvas({
     };
   }, [sessionId, studentId]);
 
-     const recomputeBadgePositions = useCallback((overlay: Editor) => {
-    const positions = overlay
-      .getCurrentPageShapes()
-      .map((shape) => {
-        const bounds = overlay.getShapePageBounds(shape);
-        if (!bounds) return null;
-        const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
-        return { id: shape.id, x: screenPoint.x, y: screenPoint.y - 22 };
-      })
-           .filter((p): p is { id: TLShapeId; x: number; y: number } => p !== null);
+  const recomputeBadgePositions = useCallback(async () => {
+    const overlay = overlayApiRef.current;
+    if (!overlay) return;
+    const { sceneCoordsToViewportCoords } = await excalidrawUtilsPromise;
+    const appState = overlay.getAppState();
+    const positions = overlay.getSceneElements().map((el) => {
+      const { x, y } = sceneCoordsToViewportCoords(
+        { sceneX: el.x, sceneY: el.y },
+        {
+          zoom: appState.zoom,
+          offsetLeft: 0,
+          offsetTop: 0,
+          scrollX: appState.scrollX,
+          scrollY: appState.scrollY,
+        }
+      );
+      return { id: el.id, x, y: y - 22 };
+    });
     setBadgePositions(positions);
   }, []);
 
   useEffect(() => {
-    const overlay = annotationEditorRef.current;
+    const overlay = overlayApiRef.current;
     if (overlay && teacherAnnotation) {
-      overlay.loadSnapshot(teacherAnnotation);
-      requestAnimationFrame(() => recomputeBadgePositions(overlay));
+      overlay.updateScene({ elements: teacherAnnotation.elements });
+      requestAnimationFrame(recomputeBadgePositions);
     }
   }, [teacherAnnotation, recomputeBadgePositions]);
 
-    // Keep the read-only annotation overlay's camera locked to the
-  // student's own canvas (so the teacher's marks stay pinned to the
-  // right spot as the student pans/zooms), and track where to show the
-  // "Teacher Comment" badge — anchored just above the teacher's actual
-  // marks, in screen space, updating live as the camera moves.
   useEffect(() => {
-    let cancelled = false;
-    let unsub: (() => void) | undefined;
+    const main = mainApiRef.current;
+    const overlay = overlayApiRef.current;
+    if (!main || !overlay) return;
 
-    const trySetup = () => {
-      if (cancelled) return;
-      const main = editorRef.current;
-      const overlay = annotationEditorRef.current;
-      if (main && overlay) {
-                unsub = react("sync-annotation-camera", () => {
-          overlay.setCamera(main.getCamera(), { animation: { duration: 0 } });
-          recomputeBadgePositions(overlay);
-        });
-      } else {
-        requestAnimationFrame(trySetup);
-      }
-    };
-    trySetup();
+    const unsubscribe = main.onScrollChange((scrollX, scrollY, zoom) => {
+      overlay.updateScene({ appState: { scrollX, scrollY, zoom } });
+      recomputeBadgePositions();
+    });
 
-    return () => {
-      cancelled = true;
-      unsub?.();
-    };
-  }, []);
+    return unsubscribe;
+  }, [recomputeBadgePositions]);
 
-  const [badgePositions, setBadgePositions] =
-    useState<{ id: string; x: number; y: number }[]>([]);
-  const saveSnapshot = useCallback(
-    async (editor: Editor) => {
-      const snapshot = editor.getSnapshot();
-      const { error } = await supabase.from("canvases").upsert(
-        {
-          session_id: sessionId,
-          student_id: studentId,
-          snapshot,
-        },
-        { onConflict: "session_id,student_id" }
-      );
-      if (error) {
-        console.error("Failed to save canvas:", error.message);
-      }
+  const saveScene = useCallback(
+    (elements: readonly unknown[]) => {
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      saveTimeout.current = setTimeout(async () => {
+        const scene: ExcalidrawScene = {
+          elements: elements as ExcalidrawScene["elements"],
+        };
+        const { error } = await supabase.from("canvases").upsert(
+          { session_id: sessionId, student_id: studentId, snapshot: scene },
+          { onConflict: "session_id,student_id" }
+        );
+        if (error) console.error("Failed to save canvas:", error.message);
+      }, SAVE_DEBOUNCE_MS);
     },
     [sessionId, studentId]
   );
 
-  const handleMount = useCallback(
-    (editor: Editor) => {
-      editorRef.current = editor;
-      let isCancelled = false;
+  const loadInitialData =
+    useCallback(async (): Promise<ExcalidrawInitialDataState> => {
+      const { data, error } = await supabase
+        .from("canvases")
+        .select("snapshot")
+        .eq("session_id", sessionId)
+        .eq("student_id", studentId)
+        .maybeSingle();
 
-      (async () => {
-        const { data, error } = await supabase
-          .from("canvases")
-          .select("snapshot")
-          .eq("session_id", sessionId)
-          .eq("student_id", studentId)
-          .maybeSingle();
+      if (error) console.error("Failed to load canvas:", error.message);
+      const scene = data?.snapshot as ExcalidrawScene | undefined;
 
-        if (error) {
-          console.error("Failed to load canvas:", error.message);
-        } else if (data?.snapshot && !isCancelled) {
-          editor.loadSnapshot(data.snapshot);
-        }
-
-        if (!isCancelled) setIsLoading(false);
-      })();
-
-      const unsubscribe = editor.store.listen(
-        () => {
-          if (saveTimeout.current) clearTimeout(saveTimeout.current);
-          saveTimeout.current = setTimeout(() => {
-            saveSnapshot(editor);
-          }, SAVE_DEBOUNCE_MS);
-        },
-        { source: "user", scope: "document" }
-      );
-
-      return () => {
-        isCancelled = true;
-        unsubscribe();
-        if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      return {
+        elements: scene?.elements ?? [],
+        appState: { viewBackgroundColor: "#ffffff" },
       };
-    },
-    [sessionId, studentId, saveSnapshot]
-  );
+    }, [sessionId, studentId]);
 
   return (
     <div className="fixed inset-0">
-      {isLoading && (
-        <div className="absolute top-3 left-3 z-10 rounded bg-black/70 px-3 py-1 text-sm text-white">
-          Loading your canvas…
-        </div>
-      )}
       {prompt && (
         <div className="absolute top-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
           {prompt}
@@ -241,18 +210,16 @@ export default function StudentCanvas({
           </p>
         </div>
       )}
-      <button
-        onClick={() => editorRef.current?.setCurrentTool("math")}
-        className="absolute bottom-3 left-3 z-50 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-blue-700"
-      >
-        Insert equation
-      </button>
-      <Tldraw
-        onMount={handleMount}
-        shapeUtils={customShapeUtils}
-        tools={customTools}
+
+      <Excalidraw
+        excalidrawAPI={(api) => {
+          mainApiRef.current = api;
+        }}
+        initialData={loadInitialData}
+        onChange={(elements) => saveScene(elements)}
       />
-          {badgePositions.map((pos) => (
+
+      {badgePositions.map((pos) => (
         <div
           key={pos.id}
           className="pointer-events-none absolute z-40 rounded bg-purple-600 px-2 py-0.5 text-xs font-medium text-white shadow"
@@ -261,25 +228,29 @@ export default function StudentCanvas({
           Teacher Comment
         </div>
       ))}
-      {/* Live, read-only overlay of whatever the teacher has annotated on
-          this student's board — purely visual, never intercepts the
-          student's own drawing. */}
-            <div className="pointer-events-none absolute inset-0 z-40">
-        <Tldraw
-          hideUi
-          shapeUtils={customShapeUtils}
-          tools={customTools}
-          components={{ Background: null }}
-          onMount={(editor) => {
-            annotationEditorRef.current = editor;
-            // Belt-and-suspenders: the wrapper's pointer-events-none should
-            // already stop clicks reaching this layer, but tldraw sets its
-            // own pointer handling internally, so this locks it down at
-            // the editor level too — genuinely uneditable either way.
-            editor.updateInstanceState({ isReadonly: true });
+
+      <div className="pointer-events-none absolute inset-0 z-40">
+        <Excalidraw
+          excalidrawAPI={(api) => {
+            overlayApiRef.current = api;
             if (teacherAnnotation) {
-              editor.loadSnapshot(teacherAnnotation);
+              api.updateScene({ elements: teacherAnnotation.elements });
             }
+          }}
+          viewModeEnabled
+          initialData={{
+            elements: [],
+            appState: { viewBackgroundColor: "transparent" },
+          }}
+          UIOptions={{
+            canvasActions: {
+              export: false,
+              saveToActiveFile: false,
+              saveAsImage: false,
+              loadScene: false,
+              clearCanvas: false,
+              toggleTheme: false,
+            },
           }}
         />
       </div>
