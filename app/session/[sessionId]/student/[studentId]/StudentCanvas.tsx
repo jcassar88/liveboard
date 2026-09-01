@@ -232,15 +232,19 @@ export default function StudentCanvas({
         shapeUtils={customShapeUtils}
         tools={customTools}
       />
+            <div className="pointer-events-none absolute top-3 right-3 z-40 max-w-xs rounded bg-yellow-500 px-2 py-1 text-xs font-medium text-black shadow">
+        DEBUG teacherAnnotation: {teacherAnnotation ? "truthy" : "falsy"} —{" "}
+        {JSON.stringify(teacherAnnotation)?.slice(0, 80)}
+      </div>
       {teacherAnnotation && (
-        <div className="pointer-events-none absolute top-3 right-3 z-40 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white shadow">
-          Teacher notes
+        <div className="pointer-events-none absolute top-10 right-3 z-40 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white shadow">
+          Teacher Comment
         </div>
       )}
       {/* Live, read-only overlay of whatever the teacher has annotated on
           this student's board — purely visual, never intercepts the
           student's own drawing. */}
-      <div className="pointer-events-none absolute inset-0 z-40">
+            <div className="pointer-events-none absolute inset-0 z-40">
         <Tldraw
           hideUi
           shapeUtils={customShapeUtils}
@@ -248,6 +252,11 @@ export default function StudentCanvas({
           components={{ Background: null }}
           onMount={(editor) => {
             annotationEditorRef.current = editor;
+            // Belt-and-suspenders: the wrapper's pointer-events-none should
+            // already stop clicks reaching this layer, but tldraw sets its
+            // own pointer handling internally, so this locks it down at
+            // the editor level too — genuinely uneditable either way.
+            editor.updateInstanceState({ isReadonly: true });
             if (teacherAnnotation) {
               editor.loadSnapshot(teacherAnnotation);
             }
