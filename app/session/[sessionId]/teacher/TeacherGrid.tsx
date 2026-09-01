@@ -49,7 +49,9 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
       }
       if (isCancelled || !data) return;
 
-      const unique = Array.from(new Set(data.map((row) => row.session_id)));
+      const unique = Array.from(
+        new Set([...data.map((row) => row.session_id), sessionId])
+      );
       const sessions = unique
         .map((id) => {
           const p = parseSessionId(id);
