@@ -5,6 +5,7 @@ import type { TLEditorSnapshot } from "tldraw";
 import { supabase } from "@/lib/supabaseClient";
 import CanvasThumbnail from "./CanvasThumbnail";
 import { useRouter } from "next/navigation";
+import AnnotationCanvas from "./AnnotationCanvas";
 
 type CanvasRow = {
   student_id: string;
@@ -268,14 +269,12 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
                 Close
               </button>
             </div>
-            <div className="h-[calc(100%-41px)] w-full">
-              {Boolean(expanded.snapshot) && (
-                <CanvasThumbnail
-                  key={expanded.updated_at}
-                  snapshot={expanded.snapshot}
-                  interactive
-                />
-              )}
+                        <div className="h-[calc(100%-41px)] w-full">
+              <AnnotationCanvas
+                sessionId={sessionId}
+                studentId={expanded.student_id}
+                studentSnapshot={expanded.snapshot}
+              />
             </div>
           </div>
         </div>

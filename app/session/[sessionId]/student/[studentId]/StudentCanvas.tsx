@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";import { Tldraw, Editor } from "tldraw";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Tldraw, Editor, TLEditorSnapshot } from "tldraw";
 import "tldraw/tldraw.css";
 import { supabase } from "@/lib/supabaseClient";
 import { customShapeUtils, customTools } from "@/lib/math-shape";
@@ -17,14 +18,19 @@ export default function StudentCanvas({
   const [isLoading, setIsLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [acceptingResponses, setAcceptingResponses] = useState(true);
+  const [teacherAnnotation, setTeacherAnnotation] = useState
+    Partial<TLEditorSnapshot> | null
+  >(null);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<Editor | null>(null);
+  const annotationEditorRef = useRef<Editor | null>(null);
 
+  // Prompt banner + accepting-responses toggle, live from the teacher.
   useEffect(() => {
     let isCancelled = false;
 
     (async () => {
-            const { data } = await supabase
+      const { data } = await supabase
         .from("session_prompts")
         .select("prompt, accepting_responses")
         .eq("session_id", sessionId)
@@ -45,7 +51,7 @@ export default function StudentCanvas({
           table: "session_prompts",
           filter: `session_id=eq.${sessionId}`,
         },
-                (payload) => {
+        (payload) => {
           const row = payload.new as
             | { prompt?: string; accepting_responses?: boolean }
             | undefined;
@@ -60,6 +66,56 @@ export default function StudentCanvas({
       supabase.removeChannel(channel);
     };
   }, [sessionId]);
+
+  // Teacher's live annotation overlay. The canvases table doesn't support
+  // a compound (session_id AND student_id) realtime filter, so this
+  // subscribes to the whole session and ignores updates for other students.
+  useEffect(() => {
+    let isCancelled = false;
+
+    (async () => {
+      const { data } = await supabase
+        .from("canvases")
+        .select("teacher_annotation")
+        .eq("session_id", sessionId)
+        .eq("student_id", studentId)
+        .maybeSingle();
+      if (!isCancelled) {
+        setTeacherAnnotation(data?.teacher_annotation ?? null);
+      }
+    })();
+
+    const channel = supabase
+      .channel(`annotation-${sessionId}-${studentId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "canvases",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          const row = payload.new as
+            | { student_id?: string; teacher_annotation?: Partial<TLEditorSnapshot> | null }
+            | undefined;
+          if (row?.student_id !== studentId) return;
+          setTeacherAnnotation(row.teacher_annotation ?? null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isCancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, studentId]);
+
+  useEffect(() => {
+    if (annotationEditorRef.current && teacherAnnotation) {
+      annotationEditorRef.current.loadSnapshot(teacherAnnotation);
+    }
+  }, [teacherAnnotation]);
 
   const saveSnapshot = useCallback(
     async (editor: Editor) => {
@@ -122,12 +178,12 @@ export default function StudentCanvas({
 
   return (
     <div className="fixed inset-0">
-            {isLoading && (
+      {isLoading && (
         <div className="absolute top-3 left-3 z-10 rounded bg-black/70 px-3 py-1 text-sm text-white">
           Loading your canvas…
         </div>
       )}
-            {prompt && (
+      {prompt && (
         <div className="absolute top-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
           {prompt}
         </div>
@@ -139,9 +195,9 @@ export default function StudentCanvas({
           </p>
         </div>
       )}
-         <button
+      <button
         onClick={() => editorRef.current?.setCurrentTool("math")}
-        className="absolute bottom-3 right-3 z-50 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-blue-700"
+        className="absolute bottom-3 left-3 z-50 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-blue-700"
       >
         Insert equation
       </button>
@@ -149,8 +205,24 @@ export default function StudentCanvas({
         onMount={handleMount}
         shapeUtils={customShapeUtils}
         tools={customTools}
-        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
       />
+      {/* Live, read-only overlay of whatever the teacher has annotated on
+          this student's board — purely visual, never intercepts the
+          student's own drawing. */}
+      <div className="pointer-events-none absolute inset-0 z-40">
+        <Tldraw
+          hideUi
+          shapeUtils={customShapeUtils}
+          tools={customTools}
+          components={{ Background: null }}
+          onMount={(editor) => {
+            annotationEditorRef.current = editor;
+            if (teacherAnnotation) {
+              editor.loadSnapshot(teacherAnnotation);
+            }
+          }}
+        />
+      </div>
     </div>
   );
 }
