@@ -29,9 +29,8 @@ export default function StudentCanvas({
   const [acceptingResponses, setAcceptingResponses] = useState(true);
   const [teacherAnnotation, setTeacherAnnotation] =
     useState<ExcalidrawScene | null>(null);
-  const [badgePositions, setBadgePositions] = useState
-    { id: string; x: number; y: number }[]
-  >([]);
+  const [badgePositions, setBadgePositions] =
+    useState<{ id: string; x: number; y: number }[]>([]);
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -219,7 +218,7 @@ export default function StudentCanvas({
         onChange={(elements) => saveScene(elements)}
       />
 
-      {badgePositions.map((pos) => (
+           {badgePositions.map((pos: { id: string; x: number; y: number }) => (
         <div
           key={pos.id}
           className="pointer-events-none absolute z-40 rounded bg-purple-600 px-2 py-0.5 text-xs font-medium text-white shadow"
