@@ -93,11 +93,10 @@ export default function AnnotationCanvas({
           }}
         />
       </div>
-      {/* Editable foreground: the teacher's own annotation layer, transparent
+           {/* Editable foreground: the teacher's own annotation layer, transparent
           background so the student's drawing shows through underneath. */}
       <div className="absolute inset-0">
         <Tldraw
-          hideUi
           shapeUtils={customShapeUtils}
           tools={customTools}
           onMount={handleAnnotationMount}
