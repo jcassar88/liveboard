@@ -116,9 +116,11 @@ export default function StudentCanvas({
     }
   }, [teacherAnnotation]);
 
-  // Keep the read-only annotation overlay's camera locked to the
-  // student's own canvas, so the teacher's marks stay pinned to the
-  // right spot as the student pans/zooms their own drawing.
+    // Keep the read-only annotation overlay's camera locked to the
+  // student's own canvas (so the teacher's marks stay pinned to the
+  // right spot as the student pans/zooms), and track where to show the
+  // "Teacher Comment" badge — anchored just above the teacher's actual
+  // marks, in screen space, updating live as the camera moves.
   useEffect(() => {
     let cancelled = false;
     let unsub: (() => void) | undefined;
@@ -130,6 +132,14 @@ export default function StudentCanvas({
       if (main && overlay) {
         unsub = react("sync-annotation-camera", () => {
           overlay.setCamera(main.getCamera(), { animation: { duration: 0 } });
+
+          const bounds = overlay.getCurrentPageBounds();
+          if (bounds) {
+            const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
+            setBadgePosition({ x: screenPoint.x, y: screenPoint.y - 28 });
+          } else {
+            setBadgePosition(null);
+          }
         });
       } else {
         requestAnimationFrame(trySetup);
@@ -142,6 +152,8 @@ export default function StudentCanvas({
       unsub?.();
     };
   }, []);
+
+   const [badgePosition, setBadgePosition] = useState<{ x: number; y: number } | null>(null);
 
   const saveSnapshot = useCallback(
     async (editor: Editor) => {
@@ -232,12 +244,11 @@ export default function StudentCanvas({
         shapeUtils={customShapeUtils}
         tools={customTools}
       />
-            <div className="pointer-events-none absolute top-3 right-3 z-40 max-w-xs rounded bg-yellow-500 px-2 py-1 text-xs font-medium text-black shadow">
-        DEBUG teacherAnnotation: {teacherAnnotation ? "truthy" : "falsy"} —{" "}
-        {JSON.stringify(teacherAnnotation)?.slice(0, 80)}
-      </div>
-      {teacherAnnotation && (
-        <div className="pointer-events-none absolute top-10 right-3 z-40 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white shadow">
+                 {teacherAnnotation && badgePosition && (
+        <div
+          className="pointer-events-none absolute z-40 rounded bg-purple-600 px-2 py-0.5 text-xs font-medium text-white shadow"
+          style={{ left: badgePosition.x, top: badgePosition.y }}
+        >
           Teacher Comment
         </div>
       )}
