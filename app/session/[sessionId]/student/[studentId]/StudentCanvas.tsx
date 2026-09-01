@@ -110,9 +110,20 @@ export default function StudentCanvas({
     };
   }, [sessionId, studentId]);
 
-  useEffect(() => {
-    if (annotationEditorRef.current && teacherAnnotation) {
-      annotationEditorRef.current.loadSnapshot(teacherAnnotation);
+    useEffect(() => {
+    const overlay = annotationEditorRef.current;
+    if (overlay && teacherAnnotation) {
+      overlay.loadSnapshot(teacherAnnotation);
+      // Recompute the badge position right after loading, rather than
+      // relying only on the reactive camera-sync effect to notice —
+      // that one wasn't reliably re-firing on the very first load.
+      requestAnimationFrame(() => {
+        const bounds = overlay.getCurrentPageBounds();
+        if (bounds) {
+          const screenPoint = overlay.pageToScreen({ x: bounds.x, y: bounds.y });
+          setBadgePosition({ x: screenPoint.x, y: screenPoint.y - 28 });
+        }
+      });
     }
   }, [teacherAnnotation]);
 
