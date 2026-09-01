@@ -19,13 +19,18 @@ export default async function TeacherPage({
   const isVerifiedTeacher =
     parsed && cookieStore.get(`teacher_of_${parsed.courseId}`)?.value === "1";
 
-  if (!isVerifiedTeacher) {
+    if (!isVerifiedTeacher) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6 text-center text-neutral-100">
-        <p className="max-w-sm">
-          This view is only available to teachers, launched directly from
-          Canvas. Please open Live Whiteboard from your course in Canvas.
-        </p>
+        <div className="max-w-md text-left text-xs">
+          <p className="mb-4 text-center text-sm">
+            This view is only available to teachers, launched directly from
+            Canvas.
+          </p>
+          <p>Looking for cookie: teacher_of_{parsed?.courseId ?? "(unparsed)"}</p>
+          <p>Parsed courseId: {parsed?.courseId ?? "null"}</p>
+          <p>All cookies present: {cookieStore.getAll().map((c) => c.name).join(", ") || "(none)"}</p>
+        </div>
       </div>
     );
   }
