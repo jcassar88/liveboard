@@ -249,33 +249,25 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
         ))}
       </div>
 
-      {expanded && (
-        <div
-          className="fixed inset-0 z-20 flex items-center justify-center bg-black/80 p-6"
-          onClick={() => setExpandedStudentId(null)}
-        >
-          <div
-            className="h-full max-h-[85vh] w-full max-w-5xl overflow-hidden rounded-lg bg-white"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b px-4 py-2">
-              <span className="font-medium text-neutral-900">
-                {expanded.student_name ?? expanded.student_id}
-              </span>
-              <button
-                onClick={() => setExpandedStudentId(null)}
-                className="text-neutral-500 hover:text-neutral-900"
-              >
-                Close
-              </button>
-            </div>
-                        <div className="h-[calc(100%-41px)] w-full">
-              <AnnotationCanvas
-                sessionId={sessionId}
-                studentId={expanded.student_id}
-                studentSnapshot={expanded.snapshot}
-              />
-            </div>
+            {expanded && (
+        <div className="fixed inset-0 z-20 bg-white">
+          <div className="flex items-center justify-between border-b px-4 py-2">
+            <span className="font-medium text-neutral-900">
+              {expanded.student_name ?? expanded.student_id}
+            </span>
+            <button
+              onClick={() => setExpandedStudentId(null)}
+              className="text-neutral-500 hover:text-neutral-900"
+            >
+              Close
+            </button>
+          </div>
+          <div className="h-[calc(100%-41px)] w-full">
+            <AnnotationCanvas
+              sessionId={sessionId}
+              studentId={expanded.student_id}
+              studentSnapshot={expanded.snapshot}
+            />
           </div>
         </div>
       )}
