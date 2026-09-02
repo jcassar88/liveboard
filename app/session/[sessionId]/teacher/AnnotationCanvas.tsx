@@ -43,12 +43,18 @@ export default function AnnotationCanvas({
       const annotation = annotationApiRef.current;
       const background = backgroundApiRef.current;
       if (annotation && background) {
-        const appState = annotation.getAppState();
-        background.updateScene({
+        // The background is the one that knows where the student's real
+        // content actually is (it just fit-to-content'd on load) — push
+        // that camera into the annotation layer once, so the teacher
+        // starts out looking at the same spot they'll actually be
+        // drawing onto. From then on, annotation is what the teacher
+        // pans, so background follows it.
+        const bgState = background.getAppState();
+        annotation.updateScene({
           appState: {
-            scrollX: appState.scrollX,
-            scrollY: appState.scrollY,
-            zoom: appState.zoom,
+            scrollX: bgState.scrollX,
+            scrollY: bgState.scrollY,
+            zoom: bgState.zoom,
           },
         });
 
