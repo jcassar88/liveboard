@@ -1,9 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import "@excalidraw/excalidraw/index.css";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  ExcalidrawImperativeAPI,
+  DataURL,
+} from "@excalidraw/excalidraw/types";
+import type { FileId } from "@excalidraw/excalidraw/element/types";
 import { supabase } from "@/lib/supabaseClient";
 import type { ExcalidrawScene } from "@/lib/excalidraw-scene";
 
@@ -11,6 +15,7 @@ const Excalidraw = dynamic(
   async () => (await import("@excalidraw/excalidraw")).Excalidraw,
   { ssr: false }
 );
+const excalidrawUtilsPromise = import("@excalidraw/excalidraw");
 
 const SAVE_DEBOUNCE_MS = 500;
 
@@ -26,26 +31,77 @@ export default function AnnotationCanvas({
   const backgroundApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const annotationApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [worksheet, setWorksheet] = useState<{
+    image_data: string;
+    width: number;
+    height: number;
+  } | null>(null);
 
   useEffect(() => {
-    if (backgroundApiRef.current && studentSnapshot) {
-      backgroundApiRef.current.updateScene({ elements: studentSnapshot.elements });
-      backgroundApiRef.current.scrollToContent(undefined, { fitToContent: true });
-    }
-  }, [studentSnapshot]);
+    let isCancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("session_worksheet")
+        .select("image_data, width, height")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      if (!isCancelled) setWorksheet(data ?? null);
+    })();
+    return () => {
+      isCancelled = true;
+    };
+  }, [sessionId]);
 
-      // Both layers now occupy the exact same screen space, so fitting each
-  // one independently to the student's own content — rather than reading
-  // one's camera and copying it into the other — produces an identical
-  // result with no timing race between the two.
+  const renderBackground = useCallback(async () => {
+    const api = backgroundApiRef.current;
+    if (!api) return;
+    const { convertToExcalidrawElements } = await excalidrawUtilsPromise;
+
+    const worksheetElements = worksheet
+      ? convertToExcalidrawElements([
+          {
+            type: "image",
+            x: 0,
+            y: 0,
+            width: worksheet.width,
+            height: worksheet.height,
+            fileId: `worksheet-${sessionId}` as FileId,
+            locked: true,
+          },
+        ])
+      : [];
+
+    if (worksheet) {
+      api.addFiles([
+        {
+          id: `worksheet-${sessionId}` as FileId,
+          dataURL: worksheet.image_data as DataURL,
+          mimeType: worksheet.image_data.startsWith("data:image/png")
+            ? "image/png"
+            : "image/jpeg",
+          created: Date.now(),
+        },
+      ]);
+    }
+
+    api.updateScene({
+      elements: [...worksheetElements, ...(studentSnapshot?.elements ?? [])],
+    });
+  }, [worksheet, studentSnapshot, sessionId]);
+
+  useEffect(() => {
+    renderBackground();
+  }, [renderBackground]);
+
   useEffect(() => {
     const annotation = annotationApiRef.current;
-    if (annotation && studentSnapshot?.elements?.length) {
-      annotation.scrollToContent(studentSnapshot.elements, {
-        fitToContent: true,
-      });
+    const background = backgroundApiRef.current;
+    if (!annotation || !background) return;
+    const elements = background.getSceneElements();
+    if (elements.length > 0) {
+      annotation.scrollToContent(elements, { fitToContent: true });
     }
-  }, [studentSnapshot]);
+  }, [studentSnapshot, worksheet]);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,10 +154,7 @@ export default function AnnotationCanvas({
           viewModeEnabled
           excalidrawAPI={(api) => {
             backgroundApiRef.current = api;
-            if (studentSnapshot) {
-              api.updateScene({ elements: studentSnapshot.elements });
-              api.scrollToContent(undefined, { fitToContent: true });
-            }
+            renderBackground();
           }}
           initialData={{
             elements: studentSnapshot?.elements ?? [],

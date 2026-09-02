@@ -154,7 +154,7 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
     setPrompt(promptInput);
   };
 
-  const toggleAccepting = async () => {
+    const toggleAccepting = async () => {
     const next = !acceptingResponses;
     const { error } = await supabase
       .from("session_prompts")
@@ -164,6 +164,63 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
       return;
     }
     setAcceptingResponses(next);
+  };
+
+  const [hasWorksheet, setHasWorksheet] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("session_worksheet")
+        .select("session_id")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      setHasWorksheet(Boolean(data));
+    })();
+  }, [sessionId]);
+
+  const handleWorksheetUpload = async (file: File) => {
+    const dataURL = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const { width, height } = await new Promise<{
+      width: number;
+      height: number;
+    }>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () =>
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = reject;
+      img.src = dataURL;
+    });
+
+    const { error } = await supabase.from("session_worksheet").upsert({
+      session_id: sessionId,
+      image_data: dataURL,
+      width,
+      height,
+    });
+    if (error) {
+      console.error("Failed to upload worksheet:", error.message);
+      return;
+    }
+    setHasWorksheet(true);
+  };
+
+  const removeWorksheet = async () => {
+    const { error } = await supabase
+      .from("session_worksheet")
+      .delete()
+      .eq("session_id", sessionId);
+    if (error) {
+      console.error("Failed to remove worksheet:", error.message);
+      return;
+    }
+    setHasWorksheet(false);
   };
   return (
     <div className="min-h-screen bg-neutral-950 p-4 text-neutral-100">
@@ -207,6 +264,30 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
           {acceptingResponses ? "Pause responses" : "Resume responses"}
         </button>
       </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+        <label className="cursor-pointer rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+          {hasWorksheet ? "Replace worksheet" : "Upload worksheet"}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleWorksheetUpload(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {hasWorksheet && (
+          <button
+            onClick={removeWorksheet}
+            className="rounded bg-neutral-800 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700"
+          >
+            Remove worksheet
+          </button>
+        )}
+      </div>
+
       {prompt && (
         <p className="mb-4 text-sm text-neutral-400">
           Currently showing: <span className="text-neutral-200">{prompt}</span>
@@ -235,7 +316,11 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
           >
             <div className="aspect-video w-full">
               {row.snapshot ? (
-                <CanvasThumbnail key={row.updated_at} snapshot={row.snapshot} />
+                                <CanvasThumbnail
+                  key={row.updated_at}
+                  sessionId={sessionId}
+                  snapshot={row.snapshot}
+                />
               ) : (
                 <div className="flex h-full items-center justify-center text-neutral-400">
                   No drawing yet

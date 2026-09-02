@@ -6,7 +6,9 @@ import "@excalidraw/excalidraw/index.css";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
+  DataURL,
 } from "@excalidraw/excalidraw/types";
+import type { FileId } from "@excalidraw/excalidraw/element/types";
 import { supabase } from "@/lib/supabaseClient";
 import type { ExcalidrawScene } from "@/lib/excalidraw-scene";
 
@@ -17,6 +19,12 @@ const Excalidraw = dynamic(
 const excalidrawUtilsPromise = import("@excalidraw/excalidraw");
 
 const SAVE_DEBOUNCE_MS = 800;
+
+type WorksheetRow = {
+  image_data: string;
+  width: number;
+  height: number;
+};
 
 export default function StudentCanvas({
   sessionId,
@@ -29,12 +37,16 @@ export default function StudentCanvas({
   const [acceptingResponses, setAcceptingResponses] = useState(true);
   const [teacherAnnotation, setTeacherAnnotation] =
     useState<ExcalidrawScene | null>(null);
+  const [worksheet, setWorksheet] = useState<WorksheetRow | null>(null);
   const [badgePositions, setBadgePositions] =
     useState<{ id: string; x: number; y: number }[]>([]);
 
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const overlayApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const worksheetApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+
+  const worksheetFileId = `worksheet-${sessionId}` as FileId;
 
   useEffect(() => {
     let isCancelled = false;
@@ -118,6 +130,71 @@ export default function StudentCanvas({
     };
   }, [sessionId, studentId]);
 
+  useEffect(() => {
+    let isCancelled = false;
+
+    (async () => {
+      const { data } = await supabase
+        .from("session_worksheet")
+        .select("image_data, width, height")
+        .eq("session_id", sessionId)
+        .maybeSingle();
+      if (!isCancelled) setWorksheet(data ?? null);
+    })();
+
+    const channel = supabase
+      .channel(`worksheet-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_worksheet",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          setWorksheet((payload.new as WorksheetRow | undefined) ?? null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isCancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    const api = worksheetApiRef.current;
+    if (!api || !worksheet) return;
+
+    (async () => {
+      const { convertToExcalidrawElements } = await excalidrawUtilsPromise;
+      api.addFiles([
+        {
+          id: worksheetFileId,
+          dataURL: worksheet.image_data as DataURL,
+          mimeType: worksheet.image_data.startsWith("data:image/png")
+            ? "image/png"
+            : "image/jpeg",
+          created: Date.now(),
+        },
+      ]);
+      const elements = convertToExcalidrawElements([
+        {
+          type: "image",
+          x: 0,
+          y: 0,
+          width: worksheet.width,
+          height: worksheet.height,
+          fileId: worksheetFileId,
+          locked: true,
+        },
+      ]);
+      api.updateScene({ elements });
+    })();
+  }, [worksheet, worksheetFileId]);
+
   const recomputeBadgePositions = useCallback(async () => {
     const overlay = overlayApiRef.current;
     if (!overlay) return;
@@ -126,18 +203,19 @@ export default function StudentCanvas({
     const positions = overlay
       .getSceneElements()
       .filter((el) => !("containerId" in el && el.containerId))
-      .map((el) => {      const { x, y } = sceneCoordsToViewportCoords(
-        { sceneX: el.x, sceneY: el.y },
-        {
-          zoom: appState.zoom,
-          offsetLeft: 0,
-          offsetTop: 0,
-          scrollX: appState.scrollX,
-          scrollY: appState.scrollY,
-        }
-      );
-      return { id: el.id, x, y: y - 22 };
-    });
+      .map((el) => {
+        const { x, y } = sceneCoordsToViewportCoords(
+          { sceneX: el.x, sceneY: el.y },
+          {
+            zoom: appState.zoom,
+            offsetLeft: 0,
+            offsetTop: 0,
+            scrollX: appState.scrollX,
+            scrollY: appState.scrollY,
+          }
+        );
+        return { id: el.id, x, y: y - 22 };
+      });
     setBadgePositions(positions);
   }, []);
 
@@ -149,7 +227,7 @@ export default function StudentCanvas({
     }
   }, [teacherAnnotation, recomputeBadgePositions]);
 
-   useEffect(() => {
+  useEffect(() => {
     let cancelled = false;
     let unsub: (() => void) | undefined;
 
@@ -157,21 +235,21 @@ export default function StudentCanvas({
       if (cancelled) return;
       const main = mainApiRef.current;
       const overlay = overlayApiRef.current;
-      if (main && overlay) {
-        // Sync immediately, not just on the next scroll — otherwise the
-        // overlay starts out misaligned until the student first pans.
+      const worksheetApi = worksheetApiRef.current;
+      if (main && overlay && worksheetApi) {
         const appState = main.getAppState();
-        overlay.updateScene({
-          appState: {
-            scrollX: appState.scrollX,
-            scrollY: appState.scrollY,
-            zoom: appState.zoom,
-          },
-        });
+        const camera = {
+          scrollX: appState.scrollX,
+          scrollY: appState.scrollY,
+          zoom: appState.zoom,
+        };
+        overlay.updateScene({ appState: camera });
+        worksheetApi.updateScene({ appState: camera });
         recomputeBadgePositions();
 
         unsub = main.onScrollChange((scrollX, scrollY, zoom) => {
           overlay.updateScene({ appState: { scrollX, scrollY, zoom } });
+          worksheetApi.updateScene({ appState: { scrollX, scrollY, zoom } });
           recomputeBadgePositions();
         });
       } else {
@@ -217,13 +295,13 @@ export default function StudentCanvas({
 
       return {
         elements: scene?.elements ?? [],
-        appState: { viewBackgroundColor: "#ffffff" },
+        appState: { viewBackgroundColor: "transparent" },
       };
     }, [sessionId, studentId]);
 
   return (
     <div className="fixed inset-0">
-            {prompt && (
+      {prompt && (
         <div className="absolute bottom-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
           {prompt}
         </div>
@@ -236,15 +314,30 @@ export default function StudentCanvas({
         </div>
       )}
 
-      <Excalidraw
-        excalidrawAPI={(api) => {
-          mainApiRef.current = api;
-        }}
-        initialData={loadInitialData}
-        onChange={(elements) => saveScene(elements)}
-      />
+      <div className="pointer-events-none absolute inset-0 z-0">
+        <Excalidraw
+          viewModeEnabled
+          excalidrawAPI={(api) => {
+            worksheetApiRef.current = api;
+          }}
+          initialData={{
+            elements: [],
+            appState: { viewBackgroundColor: "#ffffff" },
+          }}
+        />
+      </div>
 
-           {badgePositions.map((pos: { id: string; x: number; y: number }) => (
+      <div className="absolute inset-0 z-10">
+        <Excalidraw
+          excalidrawAPI={(api) => {
+            mainApiRef.current = api;
+          }}
+          initialData={loadInitialData}
+          onChange={(elements) => saveScene(elements)}
+        />
+      </div>
+
+      {badgePositions.map((pos) => (
         <div
           key={pos.id}
           className="pointer-events-none absolute z-40 rounded bg-purple-600 px-2 py-0.5 text-xs font-medium text-white shadow"
