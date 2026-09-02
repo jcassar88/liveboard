@@ -34,7 +34,20 @@ export default function AnnotationCanvas({
     }
   }, [studentSnapshot]);
 
-    useEffect(() => {
+      // Both layers now occupy the exact same screen space, so fitting each
+  // one independently to the student's own content — rather than reading
+  // one's camera and copying it into the other — produces an identical
+  // result with no timing race between the two.
+  useEffect(() => {
+    const annotation = annotationApiRef.current;
+    if (annotation && studentSnapshot?.elements?.length) {
+      annotation.scrollToContent(studentSnapshot.elements, {
+        fitToContent: true,
+      });
+    }
+  }, [studentSnapshot]);
+
+  useEffect(() => {
     let cancelled = false;
     let unsub: (() => void) | undefined;
 
@@ -43,21 +56,6 @@ export default function AnnotationCanvas({
       const annotation = annotationApiRef.current;
       const background = backgroundApiRef.current;
       if (annotation && background) {
-        // The background is the one that knows where the student's real
-        // content actually is (it just fit-to-content'd on load) — push
-        // that camera into the annotation layer once, so the teacher
-        // starts out looking at the same spot they'll actually be
-        // drawing onto. From then on, annotation is what the teacher
-        // pans, so background follows it.
-        const bgState = background.getAppState();
-        annotation.updateScene({
-          appState: {
-            scrollX: bgState.scrollX,
-            scrollY: bgState.scrollY,
-            zoom: bgState.zoom,
-          },
-        });
-
         unsub = annotation.onScrollChange((scrollX, scrollY, zoom) => {
           background.updateScene({ appState: { scrollX, scrollY, zoom } });
         });
