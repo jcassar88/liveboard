@@ -123,8 +123,10 @@ export default function StudentCanvas({
     if (!overlay) return;
     const { sceneCoordsToViewportCoords } = await excalidrawUtilsPromise;
     const appState = overlay.getAppState();
-    const positions = overlay.getSceneElements().map((el) => {
-      const { x, y } = sceneCoordsToViewportCoords(
+    const positions = overlay
+      .getSceneElements()
+      .filter((el) => !("containerId" in el && el.containerId))
+      .map((el) => {      const { x, y } = sceneCoordsToViewportCoords(
         { sceneX: el.x, sceneY: el.y },
         {
           zoom: appState.zoom,
@@ -197,8 +199,8 @@ export default function StudentCanvas({
 
   return (
     <div className="fixed inset-0">
-      {prompt && (
-        <div className="absolute top-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
+            {prompt && (
+        <div className="absolute bottom-3 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-lg bg-blue-600 px-4 py-2 text-center text-sm font-medium text-white shadow-lg">
           {prompt}
         </div>
       )}
