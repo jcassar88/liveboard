@@ -34,16 +34,37 @@ export default function AnnotationCanvas({
     }
   }, [studentSnapshot]);
 
-  useEffect(() => {
-    const annotation = annotationApiRef.current;
-    const background = backgroundApiRef.current;
-    if (!annotation || !background) return;
+    useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
 
-    const unsubscribe = annotation.onScrollChange((scrollX, scrollY, zoom) => {
-      background.updateScene({ appState: { scrollX, scrollY, zoom } });
-    });
+    const trySetup = () => {
+      if (cancelled) return;
+      const annotation = annotationApiRef.current;
+      const background = backgroundApiRef.current;
+      if (annotation && background) {
+        const appState = annotation.getAppState();
+        background.updateScene({
+          appState: {
+            scrollX: appState.scrollX,
+            scrollY: appState.scrollY,
+            zoom: appState.zoom,
+          },
+        });
 
-    return unsubscribe;
+        unsub = annotation.onScrollChange((scrollX, scrollY, zoom) => {
+          background.updateScene({ appState: { scrollX, scrollY, zoom } });
+        });
+      } else {
+        requestAnimationFrame(trySetup);
+      }
+    };
+    trySetup();
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, []);
 
   const saveAnnotation = useCallback(

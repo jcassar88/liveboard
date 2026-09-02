@@ -149,17 +149,41 @@ export default function StudentCanvas({
     }
   }, [teacherAnnotation, recomputeBadgePositions]);
 
-  useEffect(() => {
-    const main = mainApiRef.current;
-    const overlay = overlayApiRef.current;
-    if (!main || !overlay) return;
+   useEffect(() => {
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
 
-    const unsubscribe = main.onScrollChange((scrollX, scrollY, zoom) => {
-      overlay.updateScene({ appState: { scrollX, scrollY, zoom } });
-      recomputeBadgePositions();
-    });
+    const trySetup = () => {
+      if (cancelled) return;
+      const main = mainApiRef.current;
+      const overlay = overlayApiRef.current;
+      if (main && overlay) {
+        // Sync immediately, not just on the next scroll — otherwise the
+        // overlay starts out misaligned until the student first pans.
+        const appState = main.getAppState();
+        overlay.updateScene({
+          appState: {
+            scrollX: appState.scrollX,
+            scrollY: appState.scrollY,
+            zoom: appState.zoom,
+          },
+        });
+        recomputeBadgePositions();
 
-    return unsubscribe;
+        unsub = main.onScrollChange((scrollX, scrollY, zoom) => {
+          overlay.updateScene({ appState: { scrollX, scrollY, zoom } });
+          recomputeBadgePositions();
+        });
+      } else {
+        requestAnimationFrame(trySetup);
+      }
+    };
+    trySetup();
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, [recomputeBadgePositions]);
 
   const saveScene = useCallback(
