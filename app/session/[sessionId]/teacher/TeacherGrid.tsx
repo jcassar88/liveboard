@@ -135,8 +135,7 @@ export default function TeacherGrid({ sessionId }: { sessionId: string }) {
       const current = data?.prompt ?? "";
       setPrompt(current);
       setPromptInput(current);
-      setAcceptingResponses(data?.accepting_responses ?? true);
-    })();
+      setAcceptingResponses(data?.accepting_responses ?? false);    })();
   }, [sessionId]);
 
   const postPrompt = async () => {

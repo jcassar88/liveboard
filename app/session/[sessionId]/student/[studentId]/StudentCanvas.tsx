@@ -59,7 +59,7 @@ export default function StudentCanvas({
         .maybeSingle();
       if (!isCancelled) {
         setPrompt(data?.prompt ?? "");
-        setAcceptingResponses(data?.accepting_responses ?? true);
+                setAcceptingResponses(data?.accepting_responses ?? false);
       }
     })();
 
@@ -78,7 +78,7 @@ export default function StudentCanvas({
             | { prompt?: string; accepting_responses?: boolean }
             | undefined;
           setPrompt(row?.prompt ?? "");
-          setAcceptingResponses(row?.accepting_responses ?? true);
+                    setAcceptingResponses(row?.accepting_responses ?? false);
         }
       )
       .subscribe();
